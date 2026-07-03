@@ -25,7 +25,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ========== FUNGSI MENU ==========
+# ========== FUNGSI MENU (HANYA NOMOR 2) ==========
 def get_menu_keyboard():
     """Tombol menu utama di bawah setiap pesan"""
     keyboard = [
@@ -188,7 +188,6 @@ def poll_video_result(video_id, max_wait=420, interval=5):
 async def menu_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("🏠 **Menu Utama**\n\nKirim /start untuk memulai.")
     await start(update, context)
 
 async def menu_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -216,11 +215,6 @@ async def menu_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ========== HANDLER BOT (Async) ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("🎬 Buat Video", callback_data="generate")],
-        [InlineKeyboardButton("ℹ️ Bantuan", callback_data="help")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         "👋 Halo! Selamat datang di AI Video Generator Bot!\n\n"
         "📌 Cara penggunaan:\n"
@@ -228,34 +222,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "2. Kirim deskripsi video\n"
         "3. Pilih ukuran, durasi\n"
         "4. Tunggu 3-5 menit\n\n"
-        "Klik tombol di bawah untuk mulai:",
-        reply_markup=reply_markup
-    )
-
-async def generate_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_text(
-        "📤 Kirimkan **foto** dulu, lalu kirimkan **deskripsi** videonya.\n\n"
-        "Contoh deskripsi: 'anjing berlari di pantai, sunset'",
-        reply_markup=get_menu_keyboard()
-    )
-
-async def help_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_text(
-        "📖 **Panduan Lengkap:**\n\n"
-        "1️⃣ Kirim foto\n"
-        "2️⃣ Kirim deskripsi\n"
-        "3️⃣ Pilih Ukuran:\n"
-        "   - 9:16 (TikTok/Reels/IG Story)\n"
-        "   - 16:9 (YouTube/Facebook)\n"
-        "   - 1:1 (Instagram Feed)\n"
-        "4️⃣ Pilih Durasi: 5 / 10 / 15 detik\n"
-        "5️⃣ Tunggu 3-5 menit\n"
-        "6️⃣ Video akan muncul!\n\n"
-        "⚠️ Kuota harian terbatas (gratis)",
+        "Gunakan tombol di bawah untuk navigasi:",
         reply_markup=get_menu_keyboard()
     )
 
@@ -509,17 +476,15 @@ def main():
         app.add_handler(CommandHandler("cancel", cancel))
         app.add_handler(MessageHandler(Filters.PHOTO, handle_photo))
         app.add_handler(MessageHandler(Filters.TEXT & ~Filters.COMMAND, handle_text))
-        app.add_handler(CallbackQueryHandler(generate_button, pattern="^generate$"))
-        app.add_handler(CallbackQueryHandler(help_button, pattern="^help$"))
         app.add_handler(CallbackQueryHandler(button_callback))
         
-        # Menu handlers
+        # Menu handlers (hanya nomor 2)
         app.add_handler(CallbackQueryHandler(menu_start, pattern="^menu_start$"))
         app.add_handler(CallbackQueryHandler(menu_help, pattern="^menu_help$"))
         app.add_handler(CallbackQueryHandler(menu_cancel, pattern="^menu_cancel$"))
         
-        logger.info("🤖 Bot sedang berjalan... (Railway - With Menu)")
-        print("🤖 Bot sedang berjalan... (With Menu)")
+        logger.info("🤖 Bot sedang berjalan... (Railway - Menu Only)")
+        print("🤖 Bot sedang berjalan... (Menu Only)")
         app.run_polling()
         
     except Exception as e:
