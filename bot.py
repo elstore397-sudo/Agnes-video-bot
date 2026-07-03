@@ -8,6 +8,7 @@ import time
 import base64
 import logging
 import asyncio
+import concurrent.futures
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes
 from telegram.ext import filters as Filters
@@ -24,6 +25,35 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# ========== FUNGSI KOMPRES GAMBAR ==========
+def compress_image(image_path, max_size=1024):
+    """
+    Kompres gambar agar ukuran tidak terlalu besar
+    """
+    try:
+        from PIL import Image
+        img = Image.open(image_path)
+        
+        # Resize jika terlalu besar
+        if img.width > max_size or img.height > max_size:
+            img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+        
+        # Simpan dengan kualitas 85%
+        compressed_path = image_path.replace('.jpg', '_compressed.jpg')
+        img.save(compressed_path, 'JPEG', quality=85, optimize=True)
+        
+        # Ganti file asli dengan file yang sudah dikompres
+        os.replace(compressed_path, image_path)
+        logger.info(f"Gambar dikompres: {image_path}")
+        return True
+        
+    except ImportError:
+        logger.warning("PIL tidak terinstall, lewati kompresi")
+        return False
+    except Exception as e:
+        logger.warning(f"Gagal kompres gambar: {e}")
+        return False
 
 # ========== FUNGSI BANTUAN ==========
 def find_video_url(data, depth=0):
@@ -186,7 +216,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📌 Cara penggunaan:\n"
         "1. Upload foto\n"
         "2. Kirim deskripsi video\n"
-        "3. Pilih model, ukuran, durasi\n"
+        "3. Pilih ukuran, durasi\n"
         "4. Tunggu 3-5 menit\n\n"
         "Klik tombol di bawah untuk mulai:",
         reply_markup=reply_markup
@@ -224,6 +254,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         os.makedirs("temp", exist_ok=True)
         file_path = f"temp/{update.effective_user.id}_photo.jpg"
         await file.download_to_drive(file_path)
+        
+        # ===== KOMPRES GAMBAR =====
+        compress_image(file_path)
+        # =========================
+        
         context.user_data['photo_path'] = file_path
         context.user_data['photo_received'] = True
         await update.message.reply_text(
@@ -343,7 +378,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-async def generate_video_process(query, context):
+async def generate_video_process(query: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Proses generate video dengan timer berjalan"""
+    
+    # Kirim pesan awal
     status_msg = await query.edit_message_text(
         "🎬 Sedang membuat video...\n"
         "⏳ Mohon tunggu 3-5 menit\n"
@@ -351,25 +389,35 @@ async def generate_video_process(query, context):
     )
     
     start_time = time.time()
-    dots = 0
+    dot_count = 0
+    timer_running = True
     
-    async def update_status():
-        nonlocal dots
-        dots = (dots + 1) % 4
-        dot_text = "." * dots + " " * (3 - dots)
-        elapsed = int(time.time() - start_time)
-        minutes = elapsed // 60
-        seconds = elapsed % 60
-        try:
-            await status_msg.edit_text(
-                f"🎬 **Sedang membuat video{dot_text}**\n"
-                f"⏳ Mohon tunggu 3-5 menit\n"
-                f"⏱️ Waktu: {minutes}m {seconds}s"
-            )
-        except:
-            pass
+    async def update_timer():
+        nonlocal dot_count, timer_running
+        while timer_running:
+            dot_count = (dot_count + 1) % 4
+            dot_text = "." * dot_count + " " * (3 - dot_count)
+            
+            elapsed = int(time.time() - start_time)
+            minutes = elapsed // 60
+            seconds = elapsed % 60
+            
+            try:
+                await status_msg.edit_text(
+                    f"🎬 Sedang membuat video{dot_text}\n"
+                    f"⏳ Mohon tunggu 3-5 menit\n"
+                    f"⏱️ Waktu: {minutes}m {seconds}s"
+                )
+            except Exception as e:
+                logger.warning(f"Gagal update timer: {e}")
+            
+            await asyncio.sleep(5)
+    
+    # Jalankan timer di background
+    timer_task = asyncio.create_task(update_timer())
     
     try:
+        # Ambil parameter
         model = context.user_data.get('model', 'agnes-video-v2.0')
         duration = context.user_data.get('duration', 5)
         width = context.user_data.get('width', 1152)
@@ -378,25 +426,24 @@ async def generate_video_process(query, context):
         image_path = context.user_data.get('photo_path')
         ratio_display = context.user_data.get('ratio_display', '9:16')
         
-        # Update status setiap 5 detik
-        import asyncio
-        update_task = asyncio.create_task(update_loop(update_status))
+        # Proses generate (jalan di thread terpisah)
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(
+                generate_video,
+                prompt, image_path, model, duration, width, height
+            )
+            result = future.result(timeout=420)  # 7 menit timeout
         
-        result = generate_video(
-            prompt=prompt,
-            image_path=image_path,
-            model=model,
-            duration=duration,
-            width=width,
-            height=height
-        )
+        # Hentikan timer
+        timer_running = False
+        timer_task.cancel()
         
-        update_task.cancel()
-        
+        # Hapus file temp
         if os.path.exists(image_path):
             os.remove(image_path)
         context.user_data.clear()
         
+        # Kirim hasil
         if result.get('success'):
             video_url = result.get('video_url')
             keyboard = [[InlineKeyboardButton("📥 Download Video", url=video_url)]]
@@ -404,7 +451,8 @@ async def generate_video_process(query, context):
             
             await status_msg.edit_text(
                 "🔔 **VIDEO SELESAI!** 🔔\n\n"
-                "🎉 Video berhasil dibuat!"
+                "🎉 Video berhasil dibuat!\n"
+                f"⏱️ Durasi: {duration} detik"
             )
             
             await query.message.reply_video(
@@ -421,28 +469,35 @@ async def generate_video_process(query, context):
             error_msg = result.get('error', 'Unknown error')
             await status_msg.edit_text(
                 f"❌ Gagal membuat video:\n{error_msg}\n\n"
-                "Coba lagi nanti."
+                "Coba lagi nanti atau gunakan deskripsi yang berbeda."
             )
             
+    except concurrent.futures.TimeoutError:
+        timer_running = False
+        timer_task.cancel()
+        await status_msg.edit_text(
+            "❌ **Timeout**\n\n"
+            "Video membutuhkan waktu lebih lama dari 7 menit.\n"
+            "Coba lagi dengan durasi yang lebih pendek."
+        )
     except Exception as e:
+        timer_running = False
+        timer_task.cancel()
         logger.error(f"Error generate: {e}")
-        await status_msg.edit_text(f"❌ Terjadi error:\n{str(e)}")
-
-async def update_loop(update_func):
-    """Loop untuk update status setiap 5 detik"""
-    while True:
-        await update_func()
-        await asyncio.sleep(5)
+        await status_msg.edit_text(
+            f"❌ Terjadi error:\n{str(e)}\n\n"
+            "Coba lagi nanti."
+        )
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get('photo_path'):
-        try:
+     try:
             if os.path.exists(context.user_data['photo_path']):
                 os.remove(context.user_data['photo_path'])
         except:
             pass
     context.user_data.clear()
-    await update.message.reply_text("🔄 Proses dibatalkan.")
+    await update.message.reply_text("🔄 Proses dibatalkan.\nKirim /start untuk memulai ulang.")
 
 # ========== MAIN ==========
 def main():
@@ -457,8 +512,8 @@ def main():
         app.add_handler(CallbackQueryHandler(help_button, pattern="^help$"))
         app.add_handler(CallbackQueryHandler(button_callback))
         
-        logger.info("🤖 Bot sedang berjalan... (Railway - With Animation)")
-        print("🤖 Bot sedang berjalan... (With Animation)")
+        logger.info("🤖 Bot sedang berjalan... (Railway - With Timer & Compression)")
+        print("🤖 Bot sedang berjalan... (With Timer & Compression)")
         app.run_polling()
         
     except Exception as e:
