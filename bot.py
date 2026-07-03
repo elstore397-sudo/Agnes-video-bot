@@ -344,61 +344,32 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def generate_video_process(query, context):
-    """Proses generate video dengan animasi dan notifikasi"""
-    
-    # Kirim pesan awal
     status_msg = await query.edit_message_text(
-        "🎬 **Sedang membuat video...**\n"
+        "🎬 Sedang membuat video...\n"
         "⏳ Mohon tunggu 3-5 menit\n"
-        "🔄 Proses: 0%\n"
         "⏱️ Waktu: 0m 0s"
     )
     
     start_time = time.time()
     dots = 0
-    last_update = 0
     
-    # Fungsi untuk update status
-    async def update_status(progress=0, status_text="", is_finished=False):
+    async def update_status():
         nonlocal dots
-        if is_finished:
-            return
-        
         dots = (dots + 1) % 4
         dot_text = "." * dots + " " * (3 - dots)
-        
         elapsed = int(time.time() - start_time)
         minutes = elapsed // 60
         seconds = elapsed % 60
-        
-        # Estimasi progres berdasarkan waktu (simulasi)
-        if progress == 0:
-            # Estimasi dari waktu yang berlalu (asumsi total 4 menit)
-            total_seconds = 240  # 4 menit
-            if elapsed > 0:
-                estimated_progress = min(95, int((elapsed / total_seconds) * 100))
-            else:
-                estimated_progress = 0
-        else:
-            estimated_progress = progress
-        
-        status_display = (
-            f"🎬 **Sedang membuat video{dot_text}**\n"
-            f"⏳ Mohon tunggu 3-5 menit\n"
-            f"🔄 Proses: {estimated_progress}%\n"
-            f"⏱️ Waktu: {minutes}m {seconds}s"
-        )
-        
-        if status_text:
-            status_display += f"\n\n📌 {status_text}"
-        
         try:
-            await status_msg.edit_text(status_display)
-        except Exception as e:
-            logger.warning(f"Gagal update status: {e}")
+            await status_msg.edit_text(
+                f"🎬 **Sedang membuat video{dot_text}**\n"
+                f"⏳ Mohon tunggu 3-5 menit\n"
+                f"⏱️ Waktu: {minutes}m {seconds}s"
+            )
+        except:
+            pass
     
     try:
-        # Ambil parameter
         model = context.user_data.get('model', 'agnes-video-v2.0')
         duration = context.user_data.get('duration', 5)
         width = context.user_data.get('width', 1152)
@@ -407,10 +378,10 @@ async def generate_video_process(query, context):
         image_path = context.user_data.get('photo_path')
         ratio_display = context.user_data.get('ratio_display', '9:16')
         
-        # Update status awal
-        await update_status(0, "Mengirim request ke Agnes API...")
+        # Update status setiap 5 detik
+        import asyncio
+        update_task = asyncio.create_task(update_loop(update_status))
         
-        # Proses generate
         result = generate_video(
             prompt=prompt,
             image_path=image_path,
@@ -420,27 +391,22 @@ async def generate_video_process(query, context):
             height=height
         )
         
-        # Hapus file temp
+        update_task.cancel()
+        
         if os.path.exists(image_path):
             os.remove(image_path)
         context.user_data.clear()
         
-        # Kirim hasil
         if result.get('success'):
             video_url = result.get('video_url')
             keyboard = [[InlineKeyboardButton("📥 Download Video", url=video_url)]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # Notifikasi selesai (dengan suara)
             await status_msg.edit_text(
                 "🔔 **VIDEO SELESAI!** 🔔\n\n"
-                "🎉 Video berhasil dibuat!\n"
-                f"⏱️ Durasi: {duration} detik\n"
-                f"📐 Ukuran: {ratio_display}\n\n"
-                "📥 Klik tombol download di bawah."
+                "🎉 Video berhasil dibuat!"
             )
             
-            # Kirim video
             await query.message.reply_video(
                 video_url,
                 caption="🎉 **Video selesai!**\n\n"
@@ -454,17 +420,19 @@ async def generate_video_process(query, context):
         else:
             error_msg = result.get('error', 'Unknown error')
             await status_msg.edit_text(
-                f"❌ **Gagal membuat video**\n\n"
-                f"Error: {error_msg}\n\n"
-                "💡 Coba lagi nanti atau gunakan deskripsi yang berbeda."
+                f"❌ Gagal membuat video:\n{error_msg}\n\n"
+                "Coba lagi nanti."
             )
             
     except Exception as e:
         logger.error(f"Error generate: {e}")
-        await status_msg.edit_text(
-            f"❌ **Terjadi error**\n\n{str(e)}\n\n"
-            "💡 Coba lagi nanti."
-        )
+        await status_msg.edit_text(f"❌ Terjadi error:\n{str(e)}")
+
+async def update_loop(update_func):
+    """Loop untuk update status setiap 5 detik"""
+    while True:
+        await update_func()
+        await asyncio.sleep(5)
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get('photo_path'):
@@ -474,10 +442,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
     context.user_data.clear()
-    await update.message.reply_text(
-        "🔄 Proses dibatalkan.\n"
-        "Kirim /start untuk memulai ulang."
-    )
+    await update.message.reply_text("🔄 Proses dibatalkan.")
 
 # ========== MAIN ==========
 def main():
@@ -490,4 +455,15 @@ def main():
         app.add_handler(MessageHandler(Filters.TEXT & ~Filters.COMMAND, handle_text))
         app.add_handler(CallbackQueryHandler(generate_button, pattern="^generate$"))
         app.add_handler(CallbackQueryHandler(help_button, pattern="^help$"))
-        app.add_handler(CallbackQueryHandler(button_cal
+        app.add_handler(CallbackQueryHandler(button_callback))
+        
+        logger.info("🤖 Bot sedang berjalan... (Railway - With Animation)")
+        print("🤖 Bot sedang berjalan... (With Animation)")
+        app.run_polling()
+        
+    except Exception as e:
+        logger.error(f"Error main: {e}")
+        print(f"Error: {e}")
+
+if __name__ == "__main__":
+    main()
