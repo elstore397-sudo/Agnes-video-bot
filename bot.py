@@ -7,7 +7,7 @@ import json
 import time
 import base64
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CommandHandler, MessageHandler, CallbackQueryHandler
 from telegram.ext import filters as Filters
 from telegram.ext import ApplicationBuilder
