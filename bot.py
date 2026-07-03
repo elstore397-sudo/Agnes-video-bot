@@ -13,8 +13,8 @@ from telegram.ext import filters as Filters
 from telegram.ext import ApplicationBuilder
 
 # ========== KONFIGURASI ==========
-BOT_TOKEN = os.environ.get('BOT_TOKEN', 'YOUR_BOT_TOKEN')
-AGNES_API_KEY = os.environ.get('AGNES_API_KEY', 'sk-xxxxxxxxxxxx')
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '8875490753:AAGXo5uMd_J1GOf423u2lj9qqJGqBRptFU8')
+AGNES_API_KEY = os.environ.get('AGNES_API_KEY', 'sk-r7lyiDYxadlM3og6fXekCEMQ4iYd2v4klNWEjsWLcHRcmcr1')
 AGNES_API_URL = "https://apihub.agnes-ai.com"
 
 # ========== LOGGING ==========
