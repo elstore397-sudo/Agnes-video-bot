@@ -25,16 +25,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ========== FUNGSI MENU (HANYA NOMOR 2) ==========
-def get_menu_keyboard():
-    """Tombol menu utama di bawah setiap pesan"""
-    keyboard = [
-        [InlineKeyboardButton("🏠 /start", callback_data="menu_start")],
-        [InlineKeyboardButton("❓ /help", callback_data="menu_help")],
-        [InlineKeyboardButton("❌ /cancel", callback_data="menu_cancel")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
 # ========== FUNGSI BANTUAN ==========
 def find_video_url(data, depth=0):
     if depth > 10:
