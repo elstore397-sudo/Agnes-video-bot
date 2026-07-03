@@ -8,8 +8,9 @@ import time
 import base64
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackQueryHandler
+from telegram.ext import CommandHandler, MessageHandler, CallbackQueryHandler
 from telegram.ext import filters as Filters
+from telegram.ext import ApplicationBuilder
 
 # ========== KONFIGURASI ==========
 BOT_TOKEN = os.environ.get('BOT_TOKEN', 'YOUR_BOT_TOKEN')
@@ -403,19 +404,20 @@ def cancel(update, context):
 # ========== MAIN ==========
 def main():
     try:
-        updater = Updater(token=BOT_TOKEN, use_context=True)
-        dp = updater.dispatcher
-        dp.add_handler(CommandHandler("start", start))
-        dp.add_handler(CommandHandler("cancel", cancel))
-        dp.add_handler(MessageHandler(Filters.PHOTO, handle_photo))
-        dp.add_handler(MessageHandler(Filters.TEXT & ~Filters.COMMAND, handle_text))
-        dp.add_handler(CallbackQueryHandler(generate_button, pattern="^generate$"))
-        dp.add_handler(CallbackQueryHandler(help_button, pattern="^help$"))
-        dp.add_handler(CallbackQueryHandler(button_callback))
-        logger.info("🤖 Bot sedang berjalan...")
-        print("🤖 Bot sedang berjalan... Tekan Ctrl+C untuk berhenti.")
-        updater.start_polling()
-        updater.idle()
+        app = ApplicationBuilder().token(BOT_TOKEN).build()
+        
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("cancel", cancel))
+        app.add_handler(MessageHandler(Filters.PHOTO, handle_photo))
+        app.add_handler(MessageHandler(Filters.TEXT & ~Filters.COMMAND, handle_text))
+        app.add_handler(CallbackQueryHandler(generate_button, pattern="^generate$"))
+        app.add_handler(CallbackQueryHandler(help_button, pattern="^help$"))
+        app.add_handler(CallbackQueryHandler(button_callback))
+        
+        logger.info("🤖 Bot sedang berjalan... (Railway)")
+        print("🤖 Bot sedang berjalan...")
+        app.run_polling()
+        
     except Exception as e:
         logger.error(f"Error main: {e}")
         print(f"Error: {e}")
