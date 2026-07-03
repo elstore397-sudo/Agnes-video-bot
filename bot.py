@@ -174,46 +174,15 @@ def poll_video_result(video_id, max_wait=420, interval=5):
             time.sleep(interval)
     return {"error": "⏰ Timeout - Video membutuhkan waktu lebih lama dari 5 menit"}
 
-# ========== HANDLER MENU ==========
-async def menu_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await start(update, context)
-
-async def menu_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_text(
-        "📖 **Panduan Lengkap:**\n\n"
-        "1️⃣ Kirim foto\n"
-        "2️⃣ Kirim deskripsi\n"
-        "3️⃣ Pilih Ukuran:\n"
-        "   - 9:16 (TikTok/Reels/IG Story)\n"
-        "   - 16:9 (YouTube/Facebook)\n"
-        "   - 1:1 (Instagram Feed)\n"
-        "4️⃣ Pilih Durasi: 5 / 10 / 15 detik\n"
-        "5️⃣ Tunggu 3-5 menit\n"
-        "6️⃣ Video akan muncul!\n\n"
-        "⚠️ Kuota harian terbatas (gratis)",
-        reply_markup=get_menu_keyboard()
-    )
-
-async def menu_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await cancel(update, context)
-
-# ========== HANDLER BOT (Async) ==========
+# ========== HANDLER BOT ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Halo! Selamat datang di AI Video Generator Bot!\n\n"
-        "📌 Cara penggunaan:\n"
+        "👋 Kirim foto + deskripsi untuk buat video AI.\n\n"
+        "📌 Cara:\n"
         "1. Upload foto\n"
-        "2. Kirim deskripsi video\n"
-        "3. Pilih ukuran, durasi\n"
-        "4. Tunggu 3-5 menit\n\n"
-        "Gunakan tombol di bawah untuk navigasi:",
-        reply_markup=get_menu_keyboard()
+        "2. Kirim deskripsi\n"
+        "3. Pilih ukuran & durasi\n"
+        "4. Tunggu 3-5 menit"
     )
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -227,18 +196,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['photo_path'] = file_path
         context.user_data['photo_received'] = True
         await update.message.reply_text(
-            "✅ Foto berhasil diupload!\n"
-            "Sekarang kirimkan **deskripsi** untuk video.\n\n"
-            "Contoh: 'kucing bermain di taman'",
-            reply_markup=get_menu_keyboard()
+            "✅ Foto diterima. Kirim deskripsi video:"
         )
     except Exception as e:
         logger.error(f"Error handle_photo: {e}")
-        await update.message.reply_text(f"❌ Gagal upload foto: {str(e)}", reply_markup=get_menu_keyboard())
+        await update.message.reply_text(f"❌ Gagal upload foto: {str(e)}")
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get('photo_received'):
-        await update.message.reply_text("⚠️ Kirimkan foto dulu ya!", reply_markup=get_menu_keyboard())
+        await update.message.reply_text("⚠️ Kirim foto dulu!")
         return
     prompt = update.message.text
     context.user_data['prompt'] = prompt
@@ -249,19 +215,19 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("⏱️ 5 detik", callback_data="dur_5")],
         [InlineKeyboardButton("⏱️ 10 detik", callback_data="dur_10")],
         [InlineKeyboardButton("⏱️ 15 detik", callback_data="dur_15")],
-        [InlineKeyboardButton("🚀 GENERATE SEKARANG!", callback_data="generate_now")]
+        [InlineKeyboardButton("🚀 GENERATE!", callback_data="generate_now")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     model_display = context.user_data.get('model_display', 'Agnes Video 2.0')
     ratio_display = context.user_data.get('ratio_display', 'Belum pilih')
     dur_status = context.user_data.get('duration', 'Belum pilih')
     await update.message.reply_text(
-        f"📝 **Prompt:** {prompt[:150]}...\n\n"
-        f"📌 **Pilihan Anda:**\n"
+        f"📝 Prompt: {prompt[:150]}...\n\n"
+        f"📌 Pilihan:\n"
         f"🎯 Model: {model_display}\n"
         f"📐 Ukuran: {ratio_display}\n"
         f"⏱️ Durasi: {dur_status}\n\n"
-        "**Pilih opsi di bawah, lalu klik GENERATE!**",
+        "Pilih opsi di bawah, lalu GENERATE!",
         reply_markup=reply_markup
     )
 
@@ -297,10 +263,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         required = ['ratio', 'duration']
         if not all(k in context.user_data for k in required):
             await query.edit_message_text(
-                "⚠️ **Pilih dulu semua opsi:**\n"
+                "⚠️ Pilih dulu semua opsi:\n"
                 "- Ukuran (9:16 / 16:9 / 1:1)\n"
-                "- Durasi (5 / 10 / 15 detik)",
-                reply_markup=get_menu_keyboard()
+                "- Durasi (5 / 10 / 15 detik)"
             )
             return
         await generate_video_process(query, context)
@@ -330,18 +295,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{'✅' if context.user_data.get('duration') == 15 else '⬜'} 15 detik", 
             callback_data="dur_15"
         )],
-        [InlineKeyboardButton("🚀 GENERATE SEKARANG!", callback_data="generate_now")]
+        [InlineKeyboardButton("🚀 GENERATE!", callback_data="generate_now")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     ratio_display = context.user_data.get('ratio_display', 'Belum pilih')
     dur_status = context.user_data.get('duration', 'Belum pilih')
     await query.edit_message_text(
-        f"📝 **Prompt:** {context.user_data.get('prompt', '')[:150]}...\n\n"
-        f"📌 **Pilihan Anda:**\n"
+        f"📝 Prompt: {context.user_data.get('prompt', '')[:150]}...\n\n"
+        f"📌 Pilihan:\n"
         f"🎯 Model: Agnes Video 2.0\n"
         f"📐 Ukuran: {ratio_display}\n"
         f"⏱️ Durasi: {dur_status}\n\n"
-        "**Pilih opsi di bawah, lalu klik GENERATE!**",
+        "Pilih opsi di bawah, lalu GENERATE!",
         reply_markup=reply_markup
     )
 
@@ -410,15 +375,13 @@ async def generate_video_process(query: Update, context: ContextTypes.DEFAULT_TY
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await status_msg.edit_text(
-                "🔔 **VIDEO SELESAI!** 🔔\n\n"
-                "🎉 Video berhasil dibuat!\n"
-                f"⏱️ Durasi: {duration} detik",
-                reply_markup=get_menu_keyboard()
+                "🔔 VIDEO SELESAI!\n\n"
+                "🎉 Video berhasil dibuat!"
             )
             
             await query.message.reply_video(
                 video_url,
-                caption="🎉 **Video selesai!**\n\n"
+                caption="🎉 Video selesai!\n\n"
                         f"📝 Prompt: {prompt[:100]}...\n"
                         f"🎯 Model: Agnes Video 2.0\n"
                         f"📐 Ukuran: {ratio_display}\n"
@@ -430,8 +393,7 @@ async def generate_video_process(query: Update, context: ContextTypes.DEFAULT_TY
             error_msg = result.get('error', 'Unknown error')
             await status_msg.edit_text(
                 f"❌ Gagal membuat video:\n{error_msg}\n\n"
-                "Coba lagi nanti atau gunakan deskripsi yang berbeda.",
-                reply_markup=get_menu_keyboard()
+                "Coba lagi nanti."
             )
             
     except Exception as e:
@@ -440,8 +402,7 @@ async def generate_video_process(query: Update, context: ContextTypes.DEFAULT_TY
         logger.error(f"Error generate: {e}")
         await status_msg.edit_text(
             f"❌ Terjadi error:\n{str(e)}\n\n"
-            "Coba lagi nanti.",
-            reply_markup=get_menu_keyboard()
+            "Coba lagi nanti."
         )
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -452,10 +413,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
     context.user_data.clear()
-    await update.message.reply_text(
-        "🔄 Proses dibatalkan.\nKirim /start untuk memulai ulang.",
-        reply_markup=get_menu_keyboard()
-    )
+    await update.message.reply_text("🔄 Proses dibatalkan.")
 
 # ========== MAIN ==========
 def main():
@@ -468,13 +426,8 @@ def main():
         app.add_handler(MessageHandler(Filters.TEXT & ~Filters.COMMAND, handle_text))
         app.add_handler(CallbackQueryHandler(button_callback))
         
-        # Menu handlers (hanya nomor 2)
-        app.add_handler(CallbackQueryHandler(menu_start, pattern="^menu_start$"))
-        app.add_handler(CallbackQueryHandler(menu_help, pattern="^menu_help$"))
-        app.add_handler(CallbackQueryHandler(menu_cancel, pattern="^menu_cancel$"))
-        
-        logger.info("🤖 Bot sedang berjalan... (Railway - Menu Only)")
-        print("🤖 Bot sedang berjalan... (Menu Only)")
+        logger.info("🤖 Bot sedang berjalan...")
+        print("🤖 Bot sedang berjalan...")
         app.run_polling()
         
     except Exception as e:
