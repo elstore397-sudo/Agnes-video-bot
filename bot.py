@@ -31,7 +31,6 @@ logger = logging.getLogger(__name__)
 
 # ========== GENERATE VIDEO ==========
 def generate_video(prompt, image_path, duration=10):
-    """Generate video dari gambar - kirim base64 langsung"""
     try:
         with open(image_path, 'rb') as f:
             image_data = f.read()
@@ -72,14 +71,12 @@ def generate_video(prompt, image_path, duration=10):
     except Exception as e:
         return {"error": str(e)}
 
-# ========== POLLING (10 MENIT) ==========
+# ========== POLLING ==========
 def poll_video_result(task_id, max_wait=600, interval=5):
-    """Polling hasil video dengan timeout 10 menit"""
     url = f"{AGNES_API_URL}/v1/videos/{task_id}"
     headers = {'Authorization': f'Bearer {AGNES_API_KEY}'}
     
     start_time = time.time()
-    last_progress = -1
     
     while time.time() - start_time < max_wait:
         try:
@@ -99,15 +96,13 @@ def poll_video_result(task_id, max_wait=600, interval=5):
             
             logger.info(f"Status: {status}, Progress: {progress}%, Elapsed: {elapsed}s")
             
-            if progress != last_progress:
-                last_progress = progress
-            
             if result.get('error'):
                 return {"error": f"API error: {result['error'].get('message', 'Unknown')}"}
             
             if status == 'completed':
                 video_url = result.get('video_url') or result.get('url') or result.get('output')
                 if video_url:
+                    logger.info(f"✅ Video URL: {video_url}")
                     return {"success": True, "video_url": video_url}
                 return {"error": "Tidak ada URL video"}
             
@@ -116,7 +111,7 @@ def poll_video_result(task_id, max_wait=600, interval=5):
             
             elif status in ['queued', 'processing', 'pending', 'running', 'in_progress']:
                 if elapsed % 30 == 0 and elapsed > 0:
-                    logger.info(f"⏳ Masih {status} - {progress}% - {elapsed} detik")
+                    logger.info(f"⏳ Masih {status} - {progress}% - {elapsed}s")
                 time.sleep(interval)
             else:
                 time.sleep(interval)
@@ -127,11 +122,32 @@ def poll_video_result(task_id, max_wait=600, interval=5):
     
     return {"error": "⏰ Timeout - Video membutuhkan waktu lebih dari 10 menit"}
 
-# ========== DOWNLOAD VIDEO ==========
-def download_video(video_url):
-    response = requests.get(video_url, timeout=120)
-    response.raise_for_status()
-    return response.content
+# ========== DOWNLOAD VIDEO (DENGAN RETRY) ==========
+def download_video(video_url, max_retries=3):
+    """Download video dengan retry dan timeout 180 detik"""
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Download video (attempt {attempt+1}/{max_retries})...")
+            response = requests.get(video_url, timeout=180, stream=True)
+            response.raise_for_status()
+            
+            content_length = response.headers.get('content-length')
+            if content_length:
+                size_mb = int(content_length) / (1024 * 1024)
+                logger.info(f"Ukuran video: {size_mb:.2f} MB")
+            
+            content = response.content
+            logger.info(f"✅ Download selesai ({len(content)} bytes)")
+            return content
+            
+        except requests.exceptions.Timeout:
+            logger.warning(f"Download timeout, retry {attempt+1}/{max_retries}")
+            time.sleep(5)
+        except Exception as e:
+            logger.warning(f"Download error: {e}, retry {attempt+1}/{max_retries}")
+            time.sleep(5)
+    
+    raise Exception("Gagal download video setelah 3 percobaan")
 
 # ========== HANDLER BOT ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -140,12 +156,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("ℹ️ Bantuan", callback_data="help")]
     ]
     await update.message.reply_text(
-        "👋 Halo! Kirim foto + deskripsi untuk buat video 10 detik!\n\n"
-        "📌 Cara:\n"
-        "1. Kirim FOTO\n"
-        "2. Kirim DESKRIPSI\n"
-        "3. Tunggu 3-5 menit\n\n"
-        "Atau klik tombol di bawah:",
+        "👋 Kirim foto + deskripsi untuk buat video 10 detik!\n\n"
+        "📌 Tunggu 3-5 menit ya!",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -153,26 +165,14 @@ async def generate_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "📤 **Cara membuat video:**\n\n"
-        "1. Kirim **FOTO**\n"
-        "2. Kirim **DESKRIPSI**\n"
-        "3. Tunggu 3-5 menit\n\n"
-        "Contoh: 'seorang gadis tersenyum memegang tumbler'"
+        "📤 **Cara:**\n1. Kirim FOTO\n2. Kirim DESKRIPSI\n3. Tunggu 3-5 menit"
     )
 
 async def help_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
-        "📖 **Panduan:**\n\n"
-        "📸 Kirim FOTO\n"
-        "✏️ Kirim DESKRIPSI\n"
-        "⏱️ Tunggu 3-5 menit\n"
-        "🎬 Video 10 detik siap!\n\n"
-        "📦 Model: agnes-video-v2.0\n"
-        "⏱️ Durasi: 10 detik\n"
-        "📱 Format: 9:16\n\n"
-        "Gunakan /cancel untuk membatalkan."
+        "📖 **Panduan:**\n📸 Kirim FOTO\n✏️ Kirim DESKRIPSI\n⏱️ Tunggu 3-5 menit\n🎬 Video siap!"
     )
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -184,9 +184,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await file.download_to_drive(file_path)
         context.user_data['photo_path'] = file_path
         context.user_data['photo_received'] = True
-        await update.message.reply_text(
-            "✅ **Foto siap!**\nKirim **deskripsi** videonya."
-        )
+        await update.message.reply_text("✅ Foto siap! Kirim deskripsi.")
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")
 
@@ -197,9 +195,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     prompt = update.message.text
     status_msg = await update.message.reply_text(
-        "🎬 **Membuat video 10 detik...**\n"
-        "⏳ Tunggu 3-5 menit\n"
-        "📤 Jangan kirim pesan lain!"
+        "🎬 **Membuat video 10 detik...**\n⏳ Tunggu 3-5 menit"
     )
     
     try:
@@ -214,25 +210,38 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         
         if result.get('success'):
-            video_bytes = download_video(result['video_url'])
-            await status_msg.delete()
-            await update.message.reply_video(
-                video_bytes,
-                caption=f"🎉 **Video selesai!**\n📝 {prompt[:100]}",
-                filename="video.mp4",
-                timeout=120.0
-            )
-        else:
-            error_msg = result.get('error', 'Unknown')
-            if "Timeout" in error_msg:
-                await status_msg.edit_text(
-                    f"⚠️ **Server Agnes sedang ramai.**\n\n"
-                    f"❌ {error_msg}\n\n"
-                    f"💡 Coba lagi nanti atau di jam sepi.\n"
-                    f"Kirim /start untuk coba lagi."
+            video_url = result.get('video_url')
+            
+            try:
+                video_bytes = download_video(video_url)
+                size_mb = len(video_bytes) / (1024 * 1024)
+                
+                await status_msg.delete()
+                
+                if size_mb > 50:
+                    await update.message.reply_document(
+                        video_bytes,
+                        filename="video_10detik.mp4",
+                        caption=f"🎉 Video selesai! ({size_mb:.1f}MB)\n📝 {prompt[:100]}"
+                    )
+                else:
+                    await update.message.reply_video(
+                        video_bytes,
+                        caption=f"🎉 **Video selesai!**\n📝 {prompt[:100]}",
+                        filename="video.mp4",
+                        timeout=180.0
+                    )
+                
+            except Exception as e:
+                logger.warning(f"Download gagal: {e}")
+                keyboard = [[InlineKeyboardButton("📥 Download", url=video_url)]]
+                await status_msg.delete()
+                await update.message.reply_text(
+                    f"🎉 Video selesai! Klik tombol download:",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
                 )
-            else:
-                await status_msg.edit_text(f"❌ {error_msg}")
+        else:
+            await status_msg.edit_text(f"❌ {result.get('error')}")
             
     except Exception as e:
         await status_msg.edit_text(f"❌ Error: {e}")
@@ -248,10 +257,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Error: {context.error}")
-    try:
-        await update.effective_message.reply_text("❌ Error internal, coba lagi nanti.")
-    except:
-        pass
 
 # ========== MAIN ==========
 def main():
@@ -264,7 +269,7 @@ def main():
     app.add_handler(CallbackQueryHandler(help_button, pattern="^help$"))
     app.add_error_handler(error_handler)
     
-    print("🤖 Bot jalan! Timeout 10 menit.")
+    print("🤖 Bot jalan! Timeout 10 menit, retry download 3x.")
     app.run_polling()
 
 if __name__ == "__main__":
