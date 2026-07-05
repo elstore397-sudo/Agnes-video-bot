@@ -8,7 +8,14 @@ import time
 import base64
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler
+from telegram.ext import (
+    Application, 
+    CommandHandler, 
+    MessageHandler, 
+    filters,  # <- GANTI: Filters → filters (huruf kecil)
+    CallbackQueryHandler,
+    ContextTypes
+)
 
 # ========== KONFIGURASI ==========
 # Ganti dengan data milikmu
@@ -191,7 +198,7 @@ def download_video(video_url):
         raise Exception(f"Gagal download video: {str(e)}")
 
 # ========== HANDLER BOT ==========
-def start(update, context):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler untuk command /start"""
     keyboard = [
         [InlineKeyboardButton("🎬 Buat Video", callback_data="generate")],
@@ -199,7 +206,7 @@ def start(update, context):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    update.message.reply_text(
+    await update.message.reply_text(
         "👋 Halo! Kirimkan foto dan deskripsi untuk membuat video AI.\n\n"
         "📌 Cara:\n"
         "1. Upload foto\n"
@@ -210,20 +217,20 @@ def start(update, context):
         reply_markup=reply_markup
     )
 
-def generate_button(update, context):
+async def generate_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler tombol Buat Video"""
     query = update.callback_query
-    query.answer()
-    query.edit_message_text(
+    await query.answer()
+    await query.edit_message_text(
         "📤 Kirimkan **foto** dulu, lalu kirimkan **deskripsi** videonya.\n\n"
         "Contoh deskripsi: 'anjing berlari di pantai, sunset'"
     )
 
-def help_button(update, context):
+async def help_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler tombol Bantuan"""
     query = update.callback_query
-    query.answer()
-    query.edit_message_text(
+    await query.answer()
+    await query.edit_message_text(
         "📖 **Panduan:**\n\n"
         "1. Kirim foto\n"
         "2. Kirim deskripsi (contoh: 'anjing berlari di pantai')\n"
@@ -235,32 +242,32 @@ def help_button(update, context):
         "💰 Gratis (rate limit 16 req/menit)"
     )
 
-def handle_photo(update, context):
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Simpan foto yang diupload user"""
     try:
         photo = update.message.photo[-1]
-        file = photo.get_file()
+        file = await photo.get_file()
         
         os.makedirs("temp", exist_ok=True)
         file_path = f"temp/{update.effective_user.id}_photo.jpg"
-        file.download(file_path)
+        await file.download_to_drive(file_path)
         
         context.user_data['photo_path'] = file_path
         context.user_data['photo_received'] = True
         
-        update.message.reply_text(
+        await update.message.reply_text(
             "✅ Foto berhasil diupload!\n"
             "Sekarang kirimkan **deskripsi** untuk video.\n\n"
             "Contoh: 'kucing bermain di taman, cinematic'"
         )
     except Exception as e:
         logger.error(f"Error handle_photo: {e}")
-        update.message.reply_text(f"❌ Gagal upload foto: {str(e)}")
+        await update.message.reply_text(f"❌ Gagal upload foto: {str(e)}")
 
-def handle_text(update, context):
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Proses deskripsi dari user dan generate video"""
     if not context.user_data.get('photo_received'):
-        update.message.reply_text(
+        await update.message.reply_text(
             "⚠️ Kirimkan foto dulu ya!\n"
             "Upload foto yang ingin dijadikan video."
         )
@@ -270,7 +277,7 @@ def handle_text(update, context):
     context.user_data['prompt'] = prompt
     
     # Kirim pesan proses
-    status_msg = update.message.reply_text(
+    status_msg = await update.message.reply_text(
         "🎬 Sedang membuat video 10 detik...\n"
         "⏳ Mohon tunggu 1-3 menit.\n"
         "📤 Jangan kirim pesan lain sampai selesai!"
@@ -298,8 +305,8 @@ def handle_text(update, context):
                 video_bytes = download_video(video_url)
                 
                 # Kirim video ke Telegram
-                status_msg.delete()
-                update.message.reply_video(
+                await status_msg.delete()
+                await update.message.reply_video(
                     video_bytes,
                     caption=f"🎉 **Video 10 detik selesai!**\n\n"
                             f"📝 Prompt: {prompt[:100]}{'...' if len(prompt) > 100 else ''}\n"
@@ -316,8 +323,8 @@ def handle_text(update, context):
                 keyboard = [[InlineKeyboardButton("📥 Download Video", url=video_url)]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 
-                status_msg.delete()
-                update.message.reply_video(
+                await status_msg.delete()
+                await update.message.reply_video(
                     video_url,
                     caption=f"🎉 **Video 10 detik selesai!**\n\n"
                             f"📝 Prompt: {prompt[:100]}{'...' if len(prompt) > 100 else ''}\n"
@@ -327,7 +334,7 @@ def handle_text(update, context):
                 )
         else:
             error_msg = result.get('error', 'Unknown error')
-            status_msg.edit_text(
+            await status_msg.edit_text(
                 f"❌ Gagal membuat video:\n{error_msg}\n\n"
                 "💡 Tips:\n"
                 "- Coba deskripsi yang lebih detail\n"
@@ -337,12 +344,12 @@ def handle_text(update, context):
             
     except Exception as e:
         logger.error(f"Error generate: {e}")
-        status_msg.edit_text(
+        await status_msg.edit_text(
             f"❌ Terjadi error:\n{str(e)}\n\n"
             "Coba lagi nanti."
         )
 
-def cancel(update, context):
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler untuk /cancel"""
     # Hapus file temp jika ada
     if context.user_data.get('photo_path'):
@@ -354,26 +361,25 @@ def cancel(update, context):
             logger.warning(f"Gagal hapus file temp: {e}")
     
     context.user_data.clear()
-    update.message.reply_text(
+    await update.message.reply_text(
         "🔄 Proses dibatalkan.\n"
         "Kirim /start untuk memulai ulang."
     )
 
 # ========== MAIN ==========
 def main():
-    """Jalankan bot dengan versi Updater"""
+    """Jalankan bot dengan versi Application (PTB v20+)"""
     try:
-        # Buat updater
-        updater = Updater(token=BOT_TOKEN, use_context=True)
-        dp = updater.dispatcher
+        # Buat application (bukan updater)
+        application = Application.builder().token(BOT_TOKEN).build()
         
         # Tambahkan handler
-        dp.add_handler(CommandHandler("start", start))
-        dp.add_handler(CommandHandler("cancel", cancel))
-        dp.add_handler(MessageHandler(Filters.photo, handle_photo))
-        dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
-        dp.add_handler(CallbackQueryHandler(generate_button, pattern="^generate$"))
-        dp.add_handler(CallbackQueryHandler(help_button, pattern="^help$"))
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("cancel", cancel))
+        application.add_handler(MessageHandler(filters.PHOTO, handle_photo))  # filters.PHOTO
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))  # filters.TEXT
+        application.add_handler(CallbackQueryHandler(generate_button, pattern="^generate$"))
+        application.add_handler(CallbackQueryHandler(help_button, pattern="^help$"))
         
         # Jalankan bot
         logger.info("🤖 Bot sedang berjalan...")
@@ -387,8 +393,7 @@ def main():
         print("=" * 50)
         print("Tekan Ctrl+C untuk berhenti.")
         
-        updater.start_polling()
-        updater.idle()
+        application.run_polling()
         
     except Exception as e:
         logger.error(f"Error main: {e}")
